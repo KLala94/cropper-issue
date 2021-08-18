@@ -1,47 +1,32 @@
 <template>
   <main>
+    <Cropper
+      class="cropper"
+        ref="cropper"
+      :src="image"
+      :default-size="getMaxCroppedSize"
+      :stencil-props="{ aspectRatio }"
+    />
+
     <div>
       <div >
-        <div >
-          <input
-            id="height"
-            type="number"
-            v-model="valHeight[0]"
-            @input="heightOnePlate(valHeight[0])"
-            placeholder="3000"
-            min="100"
-            max="3000"
-          />
-        </div>
+        <input
+          id="height" type="number"
+          @input="changeHeight($event.target.value);"
+          @change="resize();"
+          placeholder="3000" min="100" max="3000"
+        />
       </div>
       <div  >
         <div v-for="(item, index) in [1,2,3]" :key="index">
-          <div>
-            <input
-              id="width"
-              type="number"
-              v-model="valWidth[index]"
-              @input="widthMultiplePlates(index, valWidth[index])"
-              placeholder="1500"
-              min="100"
-              max="1500"
-            />
-          </div>
+          <input
+            id="width" type="number"
+            @input="changeIndexedWidth(index, $event.target.value); resize();"
+            placeholder="1500" min="100" max="1500"
+          />
         </div>
       </div>
     </div>
-    <cropper
-      class="cropper"
-      boundingBoxClass="main-photo"
-      :src="require('./DE17-02.jpg')"
-      :default-size="defaultSize"
-      minWidth="20"
-      minHeight="20"
-      :stencil-props="{
-        aspectRatio: aspectRatio,
-      }"
-      @change="change"
-    ></cropper>
   </main>
 </template>
 
@@ -54,24 +39,25 @@ import {
 } from "vue";
 import { Cropper } from "vue-advanced-cropper";
 import "vue-advanced-cropper/dist/style.css";
-// import Stencil from "./cropper/Stencil.vue";
+import debounce from "debounce";
+
 export default defineComponent({
   components: {
     Cropper,
-    // eslint-disable-next-line vue/no-unused-components
-    // Stencil,
   },
   data() {
     return {
+      image:
+        "https://images.pexels.com/photos/6160430/pexels-photo-6160430.jpeg?auto=compress&cs=tinysrgb&h=1200&w=1800",
     };
   },
+    created() {
+    this.resize = debounce(this.resize, 500);
+  },
   setup() {
-    const valWidth = reactive([undefined, undefined, undefined]);
-    const valHeight = reactive([]);
-
-    const platesNumberWidth = ref([1500, 0, 0]);
-    const platesNumberHeight = ref(3000);
-    const imagePlacement = reactive({
+    const widths = ref([1500, 0, 0]);
+    const height = ref(3000);
+    const imageSelection = reactive({
       width : 0,
       height: 0,
       crop: {
@@ -81,67 +67,82 @@ export default defineComponent({
         top   : 0,
       }
     })
-    // function limit(number, min, max)  {
-    //   if(number < min) return min;
-    //   return number > max ? max : number;
-    // }
-    // function ifNotValueThenMax(number, max){
-    //   if(!number) return max
-    //   return Number(number);
-    // }
-    const heightOnePlate = (val) => {
-      valHeight[0] =  Number(val) || undefined;
-      platesNumberHeight.value = val;
+
+    const changeHeight = (val) => {
+      // check for limits, if ok then set value
+      height.value = mmToPx(val);
     };
     // width
-    let widthMultiplePlates = (index, val) => {
-      valWidth[index] = Number(val) || undefined;
-      platesNumberWidth.value[index] = val;
+    let changeIndexedWidth = (index, val) => {
+      // check for limits, if ok then set value
+      widths.value[index] = mmToPx(val);
     };
     const change = ({ image }) => {
-      imagePlacement.width = image.width;
-      imagePlacement.height = image.height;
+      imageSelection.width = image.width;
+      imageSelection.height = image.height;
     };
+    // Functions //////////////////////////////////////////////////////
+    function mmToPx(distance) {
+      return distance / 10;
+    }
 
-    const neededHeight = computed(() => {
-      return platesNumberHeight.value / 10;
-    })
-    const neededWidth = computed(() => {
-      return platesNumberWidth.value.reduce((acc, inc) => acc + inc, 0) / 10;
-    })
+    function sumArray(array) {
+      return array.reduce((acc, inc) => acc + inc, 0)
+    }
+    // Functions end //////////////////////////////////////////////////
 
     const aspectRatio = computed(() => {
-      return String(neededWidth.value / neededHeight.value);
+      return String(sumArray(widths.value) / height.value);
     });
 
-    const defaultSize = computed(() =>  {
-      let aspectRatio = Number(neededWidth.value/neededHeight.value) || 1;
-      if (aspectRatio > imagePlacement.width / imagePlacement.height) {
+    return {
+      change,
+      changeHeight,
+      changeIndexedWidth,
+      widths,
+      height,
+      aspectRatio,
+      sumArray,
+    };
+  },
+  methods: {
+    getMaxCroppedSize({ imageSize }) {
+      const  imageRatio = imageSize.width / imageSize.height;
+      const aspectRatio = Number(this.aspectRatio);
+      if (aspectRatio > imageRatio) {
         return {
-          width: imagePlacement.width,
-          height: imagePlacement.width / aspectRatio,
+          width: imageSize.width,
+          height: imageSize.width / aspectRatio,
         };
       } else {
         return {
-          width: imagePlacement.height * aspectRatio,
-          height: imagePlacement.height,
+          width: imageSize.height * aspectRatio,
+          height: imageSize.height,
         };
       }
-    })
-    return {
-      defaultSize,
-      change,
-      heightOnePlate,
-      widthMultiplePlates,
-      platesNumberWidth,
-      platesNumberHeight,
-      valWidth,
-      valHeight,
-      aspectRatio,
-    };
-  },
+
+    },
+    resize() {
+
+      this.$refs.cropper.resetVisibleArea();
+
+      this.$refs.cropper.setCoordinates(({  imageSize }) => {
+          const { width, height } = this.getMaxCroppedSize({ imageSize });
+          return {
+            width,
+            height,
+            left: imageSize.width / 2 - width / 2,
+            top: imageSize.height / 2 - height / 2,
+          };
+        }
+      );
+    },
+  }
 });
 </script>
 
 <style lang="scss" scoped>
+  .cropper {
+    height: 600px;
+  }
 </style>
